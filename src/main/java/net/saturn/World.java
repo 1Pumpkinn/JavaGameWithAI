@@ -7,8 +7,11 @@ import java.util.Random;
 public class World {
     private final int width;
     private final int height;
+    private final Terrain terrain;
     private List<Creature> creatures;
     private List<Food> food;
+    private List<Water> water;
+    private List<Enemy> enemies;
     private int generation;
     private int ticksSinceReproduction;
     private Random rand;
@@ -16,35 +19,80 @@ public class World {
     public World(int width, int height, int initialPopulation) {
         this.width = width;
         this.height = height;
+        this.terrain = new Terrain(width, height, System.currentTimeMillis());
         this.creatures = new ArrayList<>();
         this.food = new ArrayList<>();
+        this.water = new ArrayList<>();
+        this.enemies = new ArrayList<>();
         this.generation = 1;
         this.ticksSinceReproduction = 0;
         this.rand = new Random();
 
-        // Create initial population
+        // Create initial population on walkable terrain
         for (int i = 0; i < initialPopulation; i++) {
-            creatures.add(Creature.random(width, height));
+            int x, y;
+            do {
+                x = rand.nextInt(width);
+                y = rand.nextInt(height);
+            } while (!terrain.getBiomeAt(x, y).isWalkable());
+
+            creatures.add(new Creature(
+                    Math.random() * 10,
+                    Math.random() * 10,
+                    Math.random() * 10,
+                    x, y
+            ));
         }
 
-        // Spawn initial food
-        spawnFood(EvolutionSimulationGUI.FOOD_AMOUNT);
+        // Spawn resources based on biomes
+        spawnFoodInBiomes(100);
+        spawnWaterInBiomes(50);
+        spawnEnemies(5);
     }
 
     public void update() {
-        // Move creatures and let them seek food
+        // Move creatures
         for (Creature creature : creatures) {
-            Food nearestFood = findNearestFood(creature);
-            if (nearestFood != null) {
-                double detectionRange = creature.getSense() * 20;
-                if (creature.distanceTo(nearestFood.x, nearestFood.y) < detectionRange) {
-                    creature.moveTowards(nearestFood.x, nearestFood.y);
+            boolean needsWater = creature.getThirst() > 70;
+            boolean needsFood = creature.getEnergy() < 80;
+
+            if (needsWater) {
+                Water nearestWater = findNearestWater(creature);
+                if (nearestWater != null) {
+                    double detectionRange = creature.getSense() * 20;
+                    if (creature.distanceTo(nearestWater.x, nearestWater.y) < detectionRange) {
+                        creature.moveTowards(nearestWater.x, nearestWater.y);
+                    }
+                }
+            } else if (needsFood) {
+                Food nearestFood = findNearestFood(creature);
+                if (nearestFood != null) {
+                    double detectionRange = creature.getSense() * 20;
+                    if (creature.distanceTo(nearestFood.x, nearestFood.y) < detectionRange) {
+                        creature.moveTowards(nearestFood.x, nearestFood.y);
+                    }
                 }
             }
-            creature.move(width, height);
+
+            // Apply biome speed modifier
+            Biome biome = terrain.getBiomeAt(creature.getX(), creature.getY());
+            creature.move(width, height, biome.getSpeedModifier());
         }
 
-        // Check for food consumption
+        // Move enemies
+        for (Enemy enemy : enemies) {
+            Creature nearestCreature = findNearestCreature(enemy);
+            if (nearestCreature != null) {
+                double distance = enemy.distanceTo(nearestCreature.getX(), nearestCreature.getY());
+                if (distance < 150) {
+                    enemy.moveTowards(nearestCreature.getX(), nearestCreature.getY());
+                }
+            }
+            Biome biome = terrain.getBiomeAt(enemy.getX(), enemy.getY());
+            enemy.move(width, height, biome.getSpeedModifier());
+        }
+
+        // Food consumption
         List<Food> consumedFood = new ArrayList<>();
         for (Creature creature : creatures) {
             for (Food f : food) {
@@ -57,15 +105,39 @@ public class World {
         }
         food.removeAll(consumedFood);
 
-        // Metabolize energy
+        // Water drinking
         for (Creature creature : creatures) {
-            creature.metabolize();
+            for (Water w : water) {
+                if (creature.distanceTo(w.x, w.y) < 15) {
+                    creature.drink(40);
+                    break;
+                }
+            }
         }
 
-        // Remove dead creatures
-        creatures.removeIf(c -> !c.isAlive());
+        // Enemy attacks
+        List<Creature> killedCreatures = new ArrayList<>();
+        for (Enemy enemy : enemies) {
+            for (Creature creature : creatures) {
+                if (enemy.distanceTo(creature.getX(), creature.getY()) < 15) {
+                    killedCreatures.add(creature);
+                    enemy.feed();
+                    break;
+                }
+            }
+        }
+        creatures.removeAll(killedCreatures);
 
-        // Reproduction cycle
+        // Metabolism
+        for (Creature creature : creatures) {
+            creature.metabolize();
+            creature.increaseThirst();
+        }
+
+        creatures.removeIf(c -> !c.isAlive());
+        enemies.removeIf(e -> !e.isAlive());
+
+        // Reproduction
         ticksSinceReproduction++;
         if (ticksSinceReproduction > 100) {
             reproduce();
@@ -73,16 +145,69 @@ public class World {
             generation++;
         }
 
-        // Respawn food periodically
+        // Spawn resources in biomes
         if (rand.nextInt(10) == 0) {
-            spawnFood(5);
+            spawnFoodInBiomes(3);
+        }
+        if (rand.nextInt(15) == 0) {
+            spawnWaterInBiomes(2);
+        }
+        if (rand.nextInt(200) == 0 && enemies.size() < 15) {
+            spawnEnemies(1);
         }
 
         // Prevent extinction
         if (creatures.isEmpty()) {
             for (int i = 0; i < 20; i++) {
-                creatures.add(Creature.random(width, height));
+                int x, y;
+                do {
+                    x = rand.nextInt(width);
+                    y = rand.nextInt(height);
+                } while (!terrain.getBiomeAt(x, y).isWalkable());
+
+                creatures.add(new Creature(
+                        Math.random() * 10,
+                        Math.random() * 10,
+                        Math.random() * 10,
+                        x, y
+                ));
             }
+        }
+    }
+
+    private void spawnFoodInBiomes(int amount) {
+        for (int i = 0; i < amount; i++) {
+            int x = rand.nextInt(width);
+            int y = rand.nextInt(height);
+            Biome biome = terrain.getBiomeAt(x, y);
+
+            if (biome.getFoodSpawnRate() > 0 && rand.nextInt(20) < biome.getFoodSpawnRate()) {
+                food.add(new Food(x, y));
+            }
+        }
+    }
+
+    private void spawnWaterInBiomes(int amount) {
+        for (int i = 0; i < amount; i++) {
+            int x = rand.nextInt(width);
+            int y = rand.nextInt(height);
+            Biome biome = terrain.getBiomeAt(x, y);
+
+            if (biome.getWaterSpawnRate() > 0 && rand.nextInt(20) < biome.getWaterSpawnRate()) {
+                water.add(new Water(x, y));
+            }
+        }
+    }
+
+    private void spawnEnemies(int amount) {
+        for (int i = 0; i < amount; i++) {
+            int x, y;
+            do {
+                x = rand.nextInt(width);
+                y = rand.nextInt(height);
+            } while (!terrain.getBiomeAt(x, y).isWalkable());
+
+            enemies.add(new Enemy(x, y));
         }
     }
 
@@ -101,6 +226,36 @@ public class World {
         return nearest;
     }
 
+    private Water findNearestWater(Creature creature) {
+        Water nearest = null;
+        double minDist = Double.MAX_VALUE;
+
+        for (Water w : water) {
+            double dist = creature.distanceTo(w.x, w.y);
+            if (dist < minDist) {
+                minDist = dist;
+                nearest = w;
+            }
+        }
+
+        return nearest;
+    }
+
+    private Creature findNearestCreature(Enemy enemy) {
+        Creature nearest = null;
+        double minDist = Double.MAX_VALUE;
+
+        for (Creature c : creatures) {
+            double dist = enemy.distanceTo(c.getX(), c.getY());
+            if (dist < minDist) {
+                minDist = dist;
+                nearest = c;
+            }
+        }
+
+        return nearest;
+    }
+
     private void reproduce() {
         List<Creature> parents = new ArrayList<>();
         for (Creature c : creatures) {
@@ -109,10 +264,8 @@ public class World {
             }
         }
 
-        // Sort by fitness
         parents.sort((a, b) -> Double.compare(b.getFitness(), a.getFitness()));
 
-        // Top performers reproduce
         int numParents = Math.min(parents.size(), parents.size() / 2);
         for (int i = 0; i < numParents - 1; i += 2) {
             if (i + 1 < numParents) {
@@ -127,10 +280,8 @@ public class World {
         }
     }
 
-    private void spawnFood(int amount) {
-        for (int i = 0; i < amount; i++) {
-            food.add(new Food(rand.nextInt(width), rand.nextInt(height)));
-        }
+    public Terrain getTerrain() {
+        return terrain;
     }
 
     public List<Creature> getCreatures() {
@@ -139,6 +290,14 @@ public class World {
 
     public List<Food> getFood() {
         return food;
+    }
+
+    public List<Water> getWater() {
+        return water;
+    }
+
+    public List<Enemy> getEnemies() {
+        return enemies;
     }
 
     public int getGeneration() {
@@ -165,4 +324,3 @@ public class World {
         return creatures.stream().mapToDouble(Creature::getSense).average().orElse(0);
     }
 }
-

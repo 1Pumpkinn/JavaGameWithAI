@@ -5,14 +5,17 @@ public class Creature {
     private final double size;
     private final double sense;
     private int energy;
+    private int thirst;
     private int x, y;
     private double vx, vy;
     private int age;
 
-    public Creature(double speed, double size, double sense, int x, int y) {        this.speed = Math.max(0.1, Math.min(10, speed));
+    public Creature(double speed, double size, double sense, int x, int y) {
+        this.speed = Math.max(0.1, Math.min(10, speed));
         this.size = Math.max(0.1, Math.min(10, size));
         this.sense = Math.max(0.1, Math.min(10, sense));
         this.energy = 100;
+        this.thirst = 0;
         this.x = x;
         this.y = y;
         this.vx = (Math.random() - 0.5) * 2;
@@ -51,13 +54,11 @@ public class Creature {
         return new Creature(newSpeed, newSize, newSense, childX, childY);
     }
 
-    public void move(int worldWidth, int worldHeight) {
-        // Add some randomness to movement
+    public void move(int worldWidth, int worldHeight, double speedModifier) {
         vx += (Math.random() - 0.5) * 0.5;
         vy += (Math.random() - 0.5) * 0.5;
 
-        // Limit velocity based on speed
-        double maxVel = speed * 0.5;
+        double maxVel = speed * 0.5 * speedModifier;
         double vel = Math.sqrt(vx * vx + vy * vy);
         if (vel > maxVel) {
             vx = (vx / vel) * maxVel;
@@ -67,7 +68,6 @@ public class Creature {
         x += vx;
         y += vy;
 
-        // Bounce off walls
         if (x < 0) { x = 0; vx = Math.abs(vx); }
         if (x >= worldWidth) { x = worldWidth - 1; vx = -Math.abs(vx); }
         if (y < 0) { y = 0; vy = Math.abs(vy); }
@@ -101,16 +101,27 @@ public class Creature {
         energy += amount;
     }
 
+    public void drink(int amount) {
+        thirst = Math.max(0, thirst - amount);
+    }
+
     public void metabolize() {
         energy -= (int)(size * 0.5 + 1);
     }
 
+    public void increaseThirst() {
+        thirst += 1;
+        if (thirst > 100) {
+            energy -= 2;
+        }
+    }
+
     public boolean isAlive() {
-        return energy > 0;
+        return energy > 0 && thirst < 150;
     }
 
     public boolean canReproduce() {
-        return energy > 120 && age > 50;
+        return energy > 120 && age > 50 && thirst < 80;
     }
 
     public void spendReproductionEnergy() {
@@ -121,6 +132,7 @@ public class Creature {
     public double getSize() { return size; }
     public double getSense() { return sense; }
     public int getEnergy() { return energy; }
+    public int getThirst() { return thirst; }
     public int getX() { return x; }
     public int getY() { return y; }
     public int getAge() { return age; }
