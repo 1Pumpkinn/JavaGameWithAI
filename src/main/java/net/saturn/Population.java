@@ -3,15 +3,12 @@ package net.saturn;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Random;
 
 public class Population {
-    private List<Creature> creatures;
-    private Random rand;
+    private final List<Creature> creatures;
 
     public Population(int size) {
         creatures = new ArrayList<>();
-        rand = new Random();
         for (int i = 0; i < size; i++) {
             creatures.add(Creature.random());
         }
