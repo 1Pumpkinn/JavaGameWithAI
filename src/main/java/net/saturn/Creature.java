@@ -9,8 +9,7 @@ public class Creature {
     private double vx, vy;
     private int age;
 
-    public Creature(double speed, double size, double sense, int x, int y) {
-        this.speed = Math.max(0.1, Math.min(10, speed));
+    public Creature(double speed, double size, double sense, int x, int y) {        this.speed = Math.max(0.1, Math.min(10, speed));
         this.size = Math.max(0.1, Math.min(10, size));
         this.sense = Math.max(0.1, Math.min(10, sense));
         this.energy = 100;
